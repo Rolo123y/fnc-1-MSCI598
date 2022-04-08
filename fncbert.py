@@ -13,6 +13,7 @@ import sys
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from feature_engineering import refuting_features, polarity_features, hand_features, gen_or_load_feats
 from feature_engineering import word_overlap_features
+from feature_engineering import clean
 from transformers.modeling_utils import load_state_dict
 from utils.dataset import DataSet
 from utils.generate_test_splits import kfold_split, get_stances_for_folds
@@ -87,7 +88,7 @@ def create_data_loader(df, tokenizer, max_len, batch_size):
   return DataLoader(
     dataset=ds,
     batch_size=batch_size,
-    num_workers=2
+    num_workers=4
   )
 
 class SentimentClassifier(nn.Module):
@@ -123,7 +124,6 @@ def train_epoch(
   correct_predictions = 0
   counter=0
   for d in data_loader:
-    print(counter)
     input_ids = d["input_ids"].to(device)
     attention_mask = d["attention_mask"].to(device)
     targets = d["targets"].type(torch.LongTensor).to(device)
@@ -195,7 +195,6 @@ def get_predictions(model, data_loader):
         attention_mask=attention_mask
       )
 
-      print(outputs)
       _, preds = torch.max(outputs, dim=1)
       probs = F.softmax(outputs, dim=1)
 
@@ -240,25 +239,21 @@ if __name__ == "__main__":
     TrainingSet_frame.loc[TrainingSet_frame["Stance"] == "discuss", "Stance"] = 2
     TrainingSet_frame.loc[TrainingSet_frame["Stance"] == "disagree", "Stance"] = 3
 
+    # REMOVE SPECIAL CHARACTERS
+    TrainingSet_frame['Headline'] = TrainingSet_frame['Headline'].apply(lambda x: clean(x))
+    TrainingSet_frame['article'] = TrainingSet_frame['article'].apply(lambda x: clean(x))
+
+    # REMOVE STOPWORDS
     TrainingSet_frame['Headline'] = TrainingSet_frame['Headline'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop)]))
-    TrainingSet_frame['article'] = TrainingSet_frame['Headline'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop)]))
-    TrainingSet_frame = TrainingSet_frame.iloc[:50]
+    TrainingSet_frame['article'] = TrainingSet_frame['article'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop)]))
+
+    TrainingSet_frame = TrainingSet_frame.iloc[:400]
 
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME, do_lower_case=True)
 
-    # To identify the max_length of the encoding
-    # token_lens=[]
-    # for txt in train_articles_frame['article']:
-    #     tokens=tokenizer.encode(txt, max_length=2000)
-    #     token_lens.append(len(tokens))
-    # sns.displot(token_lens)
-    # plt.xlim([0,256])
-    # plt.xlabel('Token count')
-    # # plt.show() 
-
     # Split the training set into train + validation + test
-    df_train, df_test = train_test_split(TrainingSet_frame, test_size=0.1, random_state=RANDOM_SEED)
-    df_val, df_test = train_test_split(df_test, test_size=0.5, random_state=RANDOM_SEED)
+    df_train, df_test = train_test_split(TrainingSet_frame, test_size=0.2, random_state=RANDOM_SEED, shuffle=True)
+    df_val, df_test = train_test_split(df_test, test_size=0.5, random_state=RANDOM_SEED, shuffle=True)
     # print(df_train.shape, df_val.shape, df_test.shape)
 
     BATCH_SIZE = 2
@@ -278,7 +273,7 @@ if __name__ == "__main__":
     a = F.softmax(model(input_ids, attention_mask), dim=1)
 
     # TRAINING THE MODEL HERE
-    EPOCHS = 3
+    EPOCHS = 50
     optimizer = torch.optim.AdamW(model.parameters(), lr=2e-5)
     total_steps = len(train_data_loader) * EPOCHS
 
@@ -336,7 +331,9 @@ if __name__ == "__main__":
         best_accuracy = val_acc
         print(f'Better accuracy found: {best_accuracy}')
 
-    print("--- %s minutes ---" % round((time.time() - start_time)/60, 2))
+      print("--- %s minutes ---" % round((time.time() - start_time)/60, 2))
+
+    print("\n--- %s minutes ---" % round((time.time() - start_time)/60, 2))
 
     for i in range(0, len(history['train_acc'])):
       tens1 = history['train_acc'][i].cpu().detach().numpy()
