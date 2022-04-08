@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as np
 from sklearn.svm import SVC
 import sys
-
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from feature_engineering import refuting_features, polarity_features, hand_features, gen_or_load_feats
 from feature_engineering import word_overlap_features
@@ -19,11 +18,7 @@ from utils.dataset import DataSet
 from utils.generate_test_splits import kfold_split, get_stances_for_folds
 from utils.score import report_score, LABELS, score_submission
 from utils.system import parse_params, check_version
-
-# import nltk
-# nltk.download('omw-1.4')
-
-from transformers import BertModel, AdamW, get_linear_schedule_with_warmup
+from transformers import BertModel, get_linear_schedule_with_warmup
 import seaborn as sns
 from pylab import rcParams
 from matplotlib import rc
@@ -31,12 +26,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix, classification_report
 from collections import defaultdict
 from textwrap import wrap
-
 from torch import device, nn
 from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
 from tensorflow.python.client import device_lib
+from nltk.corpus import stopwords
 
+stop = stopwords.words('english')
 PRE_TRAINED_MODEL_NAME = 'bert-base-uncased'
 MODEL = 'bert-base-multilingual-uncased'
 transformers.logging.set_verbosity_error()
@@ -108,6 +104,7 @@ class SentimentClassifier(nn.Module):
       attention_mask=attention_mask.to(device),
       return_dict=False,
     )
+
     output = self.drop(pooled_output)
     return self.out(output)
 
@@ -197,6 +194,8 @@ def get_predictions(model, data_loader):
         input_ids=input_ids,
         attention_mask=attention_mask
       )
+
+      print(outputs)
       _, preds = torch.max(outputs, dim=1)
       probs = F.softmax(outputs, dim=1)
 
@@ -211,7 +210,6 @@ def get_predictions(model, data_loader):
   real_values = torch.stack(real_values).cpu()
 
   return headlines_texts, articles_texts, predictions, prediction_probs, real_values
-
 
 def show_confusion_matrix(confusion_matrix):
   hmap = sns.heatmap(confusion_matrix, annot=True, fmt="d", cmap="Blues")
@@ -241,19 +239,14 @@ if __name__ == "__main__":
     TrainingSet_frame.loc[TrainingSet_frame["Stance"] == "agree", "Stance"] = 1
     TrainingSet_frame.loc[TrainingSet_frame["Stance"] == "discuss", "Stance"] = 2
     TrainingSet_frame.loc[TrainingSet_frame["Stance"] == "disagree", "Stance"] = 3
-    TrainingSet_frame = TrainingSet_frame.iloc[:50]
-    # print(train_articles_frame)
-    # print(train_stances_frame)
-    # print(TrainingSet_frame)
 
-    # Load the conpetition dataset
-    competition_dataset = DataSet("competition_test")
-    # X_competition, y_competition = generate_features(
-    #     competition_dataset.stances, competition_dataset, "competition")
+    TrainingSet_frame['Headline'] = TrainingSet_frame['Headline'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop)]))
+    TrainingSet_frame['article'] = TrainingSet_frame['Headline'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop)]))
+    TrainingSet_frame = TrainingSet_frame.iloc[:50]
 
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME, do_lower_case=True)
 
-    # to identify the max_length of the encoding
+    # To identify the max_length of the encoding
     # token_lens=[]
     # for txt in train_articles_frame['article']:
     #     tokens=tokenizer.encode(txt, max_length=2000)
@@ -276,37 +269,13 @@ if __name__ == "__main__":
     train_data = next(iter(train_data_loader))
     val_data = next(iter(val_data_loader))
     test_data = next(iter(test_data_loader))
-    # print(train_data.keys())
-    # print(train_data['input_ids'].shape)
-    # print(train_data['attention_mask'].shape)
-    # print(train_data['targets'].shape)
 
-    # Sentiment Classification with BERT and Hugging Face
-    # # bert_model = BertForSequenceClassification.from_pretrained("bert-base-uncased", problem_type="multi_label_classification", num_classes=4)
-
-    # labels_t = torch.nn.functional.one_hot(train_data['targets'].long(), num_classes=4)
-    # labels_t = labels_t.float()
-
-    # outputs = bert_model(
-    # input_ids=train_data['input_ids'], 
-    # attention_mask=train_data['attention_mask'],
-    # # labels=labels_t,
-    # # output_hidden_states=True,
-    # # output_attentions=True,
-    # return_dict=True
-    # )
-    # print(outputs.keys())
-    # print(bert_model.config.hidden_size)
-
+    # Sentiment Classification with BERT
     model = SentimentClassifier(4)
     model = model.to(device)
     input_ids = train_data['input_ids'].to(device)
     attention_mask = train_data['attention_mask'].to(device)
     a = F.softmax(model(input_ids, attention_mask), dim=1)
-    # print(input_ids.shape) # batch size x seq length
-    # print(attention_mask.shape) # batch size x seq length
-    # print(model)
-    # print(a)
 
     # TRAINING THE MODEL HERE
     EPOCHS = 3
@@ -362,17 +331,13 @@ if __name__ == "__main__":
 
       if val_acc > best_accuracy:
         torch.save(model.state_dict(), 'model/best_model_state.bin')
-        # model.config.to_json_file('model/best_model_config.json')
         tokenizer.save_vocabulary('model/best_model_tokenizer.bin')
 
         best_accuracy = val_acc
         print(f'Better accuracy found: {best_accuracy}')
 
-
     print("--- %s minutes ---" % round((time.time() - start_time)/60, 2))
 
-    # print(history.keys())
-    # print("length of history['train_acc']: " + str(len(history['train_acc'])))
     for i in range(0, len(history['train_acc'])):
       tens1 = history['train_acc'][i].cpu().detach().numpy()
       tens2 = history['val_acc'][i].cpu().detach().numpy()
@@ -381,8 +346,6 @@ if __name__ == "__main__":
 
     a = history['train_acc']
     b = history['val_acc']
-    # print(a)
-    # print(b)
     plt.plot(a, label='train accuracy')
     plt.plot(b, label='validation accuracy')
     plt.title('Training history')
@@ -391,11 +354,6 @@ if __name__ == "__main__":
     plt.legend()
     plt.ylim([0, 1])
     plt.show()
-
-    # saved_model = BertModel.from_pretrained(PRE_TRAINED_MODEL_NAME)
-    # state_dict = torch.load('model/best_model_state.bin')
-    # saved_model.load_state_dict(state_dict)
-    # tokenizer = BertTokenizer('model/best_model_tokenizer.bin', do_lower_case=True)
 
     y_headline_text, y_article_text, y_pred, y_pred_probs, y_test = get_predictions(
       model,
@@ -407,6 +365,8 @@ if __name__ == "__main__":
 
     dy = pd.DataFrame(y_pred.numpy())
     dx = pd.DataFrame(y_test.numpy())
+    print(dy)
+    print(dx)
 
     cm = confusion_matrix(dx, dy, labels=labels)
     df_cm = pd.DataFrame(cm)
