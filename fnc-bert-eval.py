@@ -165,9 +165,9 @@ if __name__ == "__main__":
 
   # LOAD THE TOKENIZER AND MODEL
   model = SentimentClassifier(4)
-  model.load_state_dict(torch.load('model/best_model_state.bin'))
+  model.load_state_dict(torch.load('model/acc_best_model_state.bin'))
   model = model.to(device)
-  tokenizer = BertTokenizer('model/best_model_tokenizer.bin', do_lower_case=True, local_files_only=True)
+  tokenizer = BertTokenizer('model/acc_best_model_tokenizer.bin', do_lower_case=True, local_files_only=True)
 
 # GET THE COMPETITION DATASET
   Competition_dataset = DataSet("competition_test")
@@ -178,18 +178,12 @@ if __name__ == "__main__":
   Competition_dataset_frame.loc[Competition_dataset_frame["Stance"] == "agree", "Stance"] = 1
   Competition_dataset_frame.loc[Competition_dataset_frame["Stance"] == "discuss", "Stance"] = 2
   Competition_dataset_frame.loc[Competition_dataset_frame["Stance"] == "disagree", "Stance"] = 3
-  Competition_dataset_frame = Competition_dataset_frame.iloc[:5]
+  # Competition_dataset_frame = Competition_dataset_frame.iloc[:5]
 
 # CREATE A DATALOADER WITH THE COMPETITION DATASET AND THE TOKENIZER
-
   start_time = time.time()
 
   test_data_loader = create_data_loader(Competition_dataset_frame, tokenizer, 500, 1)
-  # test_data = next(iter(test_data_loader))
-  # input_ids = test_data['input_ids'].to(device)
-  # attention_mask = test_data['attention_mask'].to(device)
-  # a = F.softmax(model(input_ids, attention_mask), dim=1)
-
   y_headline_text, y_article_text, y_pred, y_pred_probs, y_test = get_predictions(
       model,
       test_data_loader
@@ -210,4 +204,17 @@ if __name__ == "__main__":
   df_cm = pd.DataFrame(cm)
   show_confusion_matrix(df_cm)
 
+  actual_stance = Competition_dataset_frame['Stance'].values.tolist()
+  df = Competition_dataset_frame
+  df['Stance'] = y_pred
+  predicted_stance = df['Stance'].values.tolist()  
+  df.loc[df["Stance"] == 0, "Stance"] = "unrelated"
+  df.loc[df["Stance"] == 1, "Stance"] = "agree"
+  df.loc[df["Stance"] == 2, "Stance"] = "discuss"
+  df.loc[df["Stance"] == 3, "Stance"] = "disagree"
+  df.reset_index(drop=True, inplace=True)
+  df = df[["Headline", "Body ID", "Stance"]]
+  df.to_csv('answer.csv', index=False, encoding='utf-8')
+
+  report_score([LABELS[e] for e in actual_stance],[LABELS[e] for e in predicted_stance])
 

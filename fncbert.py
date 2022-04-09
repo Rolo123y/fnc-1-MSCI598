@@ -247,7 +247,7 @@ if __name__ == "__main__":
     TrainingSet_frame['Headline'] = TrainingSet_frame['Headline'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop)]))
     TrainingSet_frame['article'] = TrainingSet_frame['article'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop)]))
 
-    TrainingSet_frame = TrainingSet_frame.iloc[:400]
+    # TrainingSet_frame = TrainingSet_frame.iloc[:400]
 
     tokenizer = BertTokenizer.from_pretrained(PRE_TRAINED_MODEL_NAME, do_lower_case=True)
 
@@ -325,8 +325,8 @@ if __name__ == "__main__":
       history['val_loss'].append(val_loss)
 
       if val_acc > best_accuracy:
-        torch.save(model.state_dict(), 'model/best_model_state.bin')
-        tokenizer.save_vocabulary('model/best_model_tokenizer.bin')
+        torch.save(model.state_dict(), 'model/acc_best_model_state.bin')
+        tokenizer.save_vocabulary('model/acc_best_model_tokenizer.bin')
 
         best_accuracy = val_acc
         print(f'Better accuracy found: {best_accuracy}')
@@ -351,6 +351,11 @@ if __name__ == "__main__":
     plt.legend()
     plt.ylim([0, 1])
     plt.show()
+
+    model = SentimentClassifier(4)
+    model.load_state_dict(torch.load('model/acc_best_model_state.bin'))
+    model = model.to(device)
+    tokenizer = BertTokenizer('model/acc_best_model_tokenizer.bin', do_lower_case=True, local_files_only=True)
 
     y_headline_text, y_article_text, y_pred, y_pred_probs, y_test = get_predictions(
       model,
